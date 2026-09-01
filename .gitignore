@@ -2,6 +2,9 @@
 __pycache__/
 *.py[cod]
 *.pyo
+*.egg-info/
+build/
+dist/
 
 # Virtual environment
 venv/
@@ -10,6 +13,7 @@ env/
 
 # Environment variables / secrets
 .env
+*.key
 
 # IDE
 .vscode/
@@ -19,10 +23,11 @@ env/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs / local data
 *.log
+data/
+data/webhook_events.log
 
-# Build files
-build/
-dist/
-*.egg-info/
+# Frontend (Phase 7)
+node_modules/
+.next/
