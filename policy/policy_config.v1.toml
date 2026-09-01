@@ -1,0 +1,39 @@
+# ============================================================================
+# Policy config  —  v1
+# Deterministic limits enforced by app/policy.py. The LLM cannot read, write,
+# or bypass this file. All money values are integer paise.
+#
+# Versioned on purpose: never edit a released version in place. To change
+# limits, copy to policy_config.v2.toml, bump `version`, and point
+# POLICY_VERSION (or the default in app/policy.py) at it.
+# ============================================================================
+version = "v1"
+
+[contact_budget]
+# Shared across ALL workflows for a single customer (Phase 4 arbitration).
+max_contacts_per_window = 1
+window_hours = 24
+
+[payment_link]
+# Global clamps for any generated payment link.
+min_amount = 100          # never create a link below 1.00
+max_amount = 5000000      # 50,000.00 hard ceiling regardless of amount_at_risk
+expire_after_hours = 72
+
+[workflows.mandate_whisperer]
+enabled = true
+allowed_actions = ["send_whatsapp_nudge", "create_payment_link", "escalate_to_human", "no_action"]
+max_amount_at_risk = 2000000     # cases above this escalate instead of auto-acting
+max_retries = 2
+
+[workflows.retry_router]
+enabled = true
+allowed_actions = ["create_payment_link", "escalate_to_human", "no_action"]
+max_amount_at_risk = 1000000
+max_retries = 1
+
+[workflows.collections_copilot]
+enabled = true
+allowed_actions = ["create_partial_payment_link", "create_payment_link", "escalate_to_human", "no_action"]
+max_amount_at_risk = 5000000
+max_retries = 1
