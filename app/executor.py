@@ -27,6 +27,20 @@ def idempotency_key(case: RecoveryCase, action: ActionType) -> str:
     return f"{case.case_id}:{action.value}"
 
 
+# Razorpay caps reference_id at 40 chars. Keep it deterministic per (case, action)
+# so Razorpay's side is idempotent too: 32-hex case id + short action code.
+_ACTION_CODE = {
+    ActionType.create_payment_link: "pl",
+    ActionType.create_partial_payment_link: "pp",
+    ActionType.retry_charge: "rc",
+}
+
+
+def razorpay_reference_id(case: RecoveryCase, action: ActionType) -> str:
+    base = (case.case_id or "nocaseid").replace("-", "")
+    return f"{base}-{_ACTION_CODE.get(action, 'xx')}"[:40]
+
+
 async def _already_executed(key: str) -> dict[str, Any] | None:
     rows = await db.select(
         "action_log",
@@ -102,7 +116,7 @@ async def _dispatch(
         link = await gw.create_payment_link(
             amount=decision.resolved_amount,
             description=f"Recovery for case {case.case_id} ({case.workflow_type.value})",
-            reference_id=idempotency_key(case, action),
+            reference_id=razorpay_reference_id(case, action),
             customer=_customer_block(case),
             accept_partial=(action == ActionType.create_partial_payment_link),
         )

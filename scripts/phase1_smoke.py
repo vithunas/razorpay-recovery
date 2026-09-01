@@ -66,7 +66,7 @@ async def main() -> None:
         print("delivery 1:", r1.status_code, r1.json())
         print("delivery 2:", r2.status_code, r2.json(), "  <- duplicate expected True")
 
-        await asyncio.sleep(2.0)  # let BackgroundTasks finish
+        await asyncio.sleep(7.0)  # let the pipeline's BackgroundTask finish (many Supabase round-trips + a real payment link)
 
         rest = settings.rest_url
         k = settings.supabase_secret_key
