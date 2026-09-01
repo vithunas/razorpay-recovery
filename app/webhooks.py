@@ -23,6 +23,7 @@ from app.config import settings
 router = APIRouter()
 
 
+@router.post("/webhook/razorpay")
 @router.post("/webhook")
 async def razorpay_webhook(
     request: Request,
