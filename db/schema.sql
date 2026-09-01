@@ -13,9 +13,12 @@ create extension if not exists "pgcrypto";  -- for gen_random_uuid()
 create table if not exists merchant (
     id                   uuid primary key default gen_random_uuid(),
     razorpay_merchant_id text unique,
+    external_ref          text,
     name                 text not null,
     created_at           timestamptz not null default now()
 );
+create unique index if not exists merchant_external_ref_uniq
+    on merchant(external_ref) where external_ref is not null;
 
 -- ----------------------------------------------------------------------------
 -- customer
@@ -23,11 +26,14 @@ create table if not exists merchant (
 create table if not exists customer (
     id           uuid primary key default gen_random_uuid(),
     merchant_id  uuid not null references merchant(id) on delete cascade,
+    external_ref text,                              -- Razorpay cust id / email / phone
     email        text,
     phone        text,
     name         text,
     created_at   timestamptz not null default now()
 );
+create unique index if not exists customer_external_ref_uniq
+    on customer(external_ref) where external_ref is not null;
 create index if not exists customer_merchant_idx on customer(merchant_id);
 
 -- ----------------------------------------------------------------------------
@@ -52,8 +58,8 @@ create table if not exists recovery_case (
     case_id           uuid primary key default gen_random_uuid(),
     workflow_type     text not null
         check (workflow_type in ('mandate_whisperer', 'retry_router', 'collections_copilot')),
-    customer_id       uuid references customer(id) on delete set null,
-    merchant_id       uuid references merchant(id) on delete set null,
+    customer_id       text,   -- external customer ref (Razorpay cust id / email / phone)
+    merchant_id       text,   -- external merchant ref
     amount_at_risk    bigint not null default 0,      -- paise, integer only
     reason            text not null,                  -- closed enum, enforced in app/policy
     evidence          jsonb not null default '{}'::jsonb,   -- refs to webhook_event rows
@@ -103,7 +109,7 @@ create unique index if not exists recovery_case_workflow_source_uniq
 create table if not exists action_log (
     id              uuid primary key default gen_random_uuid(),
     case_id         uuid references recovery_case(case_id) on delete cascade,
-    customer_id     uuid,
+    customer_id     text,               -- external customer ref, matches recovery_case.customer_id
     actor           text not null,
     event           text not null,
     from_state      text,
