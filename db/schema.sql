@@ -87,3 +87,47 @@ drop trigger if exists recovery_case_set_updated_at on recovery_case;
 create trigger recovery_case_set_updated_at
     before update on recovery_case
     for each row execute function set_updated_at();
+
+-- ============================================================================
+-- Migration 002 (folded in) — see db/migrations/002_action_log.sql
+-- ============================================================================
+alter table recovery_case add column if not exists source_event_id text;
+alter table recovery_case add column if not exists policy_version   text;
+alter table recovery_case add column if not exists last_proposal    jsonb;
+alter table recovery_case add column if not exists last_decision    jsonb;
+
+create unique index if not exists recovery_case_workflow_source_uniq
+    on recovery_case(workflow_type, source_event_id)
+    where source_event_id is not null;
+
+create table if not exists action_log (
+    id              uuid primary key default gen_random_uuid(),
+    case_id         uuid references recovery_case(case_id) on delete cascade,
+    customer_id     uuid,
+    actor           text not null,
+    event           text not null,
+    from_state      text,
+    to_state        text,
+    idempotency_key text,
+    detail          jsonb not null default '{}'::jsonb,
+    created_at      timestamptz not null default now()
+);
+create index if not exists action_log_case_idx on action_log(case_id);
+create index if not exists action_log_idem_idx on action_log(idempotency_key);
+create index if not exists action_log_event_idx on action_log(event);
+create index if not exists action_log_customer_idx on action_log(customer_id, created_at);
+
+create unique index if not exists action_log_executed_idem_uniq
+    on action_log(idempotency_key)
+    where event = 'action_executed' and idempotency_key is not null;
+
+create or replace function action_log_no_update() returns trigger as $$
+begin
+    raise exception 'action_log is append-only (UPDATE blocked)';
+end;
+$$ language plpgsql;
+
+drop trigger if exists action_log_block_update on action_log;
+create trigger action_log_block_update
+    before update on action_log
+    for each row execute function action_log_no_update();

@@ -1,11 +1,16 @@
-# --- Phase 0: foundations ---
+# --- runtime ---
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
 httpx==0.28.1
 python-dotenv==1.1.1
 pydantic==2.13.5
 pydantic-settings==2.7.1
+razorpay==2.0.1
 
-# --- Phase 1+ (added as phases land) ---
-# razorpay==1.4.2
+# --- dev / test ---
+pytest==9.1.1
+pytest-asyncio==1.4.0
+
+# --- Phase 2+ (added when the phase lands) ---
 # pydantic-ai-slim[google]
+# twilio

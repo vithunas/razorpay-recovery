@@ -1,13 +1,11 @@
 """Razorpay webhook receiver.
 
 Contract (Razorpay): respond 2xx within 5 seconds or the delivery is marked
-failed and retried with backoff. So this module does the minimum inline —
-read raw body, dedupe, persist — and hands heavy work to BackgroundTasks.
+failed and retried with backoff. So this endpoint does the minimum inline —
+verify signature, dedupe-insert — and hands the pipeline to BackgroundTasks.
 
-Phase 0: persist the raw event into `webhook_event`, deduped on the
-`X-Razorpay-Event-Id` header via the table's unique constraint.
-Phase 1 will add HMAC-SHA256 signature verification over the raw body and
-the DETECTED -> ... state machine.
+Signature verification and idempotency are deterministic code; the LLM is never
+on this path (architectural law).
 """
 from __future__ import annotations
 
@@ -17,8 +15,9 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Header, Request
 from fastapi.responses import JSONResponse
 
-from app import db
+from app import audit, db, pipeline
 from app.config import settings
+from app.security import verify_webhook_signature
 
 router = APIRouter()
 
@@ -33,6 +32,17 @@ async def razorpay_webhook(
 ) -> JSONResponse:
     raw_body = await request.body()
 
+    signature_ok = verify_webhook_signature(
+        raw_body, x_razorpay_signature, settings.razorpay_webhook_secret
+    )
+    if not signature_ok:
+        # Not a transient error — do not make Razorpay retry a bad-signature body.
+        await audit.record(
+            case_id=None, actor="webhook", event="error",
+            detail={"reason": "invalid_signature", "event_id": x_razorpay_event_id},
+        )
+        return JSONResponse(status_code=400, content={"error": "invalid signature"})
+
     try:
         payload: dict[str, Any] = json.loads(raw_body or b"{}")
     except json.JSONDecodeError:
@@ -41,27 +51,21 @@ async def razorpay_webhook(
     event_id = x_razorpay_event_id or payload.get("id") or "unknown"
     event_type = payload.get("event")
 
-    # TODO(Phase 1): verify HMAC-SHA256(raw_body, RAZORPAY_WEBHOOK_SECRET) == x_razorpay_signature
-    signature_verified = False
-
-    row = {
+    inserted = await db.insert("webhook_event", {
         "event_id": event_id,
         "event_type": event_type,
         "payload": payload,
-        "signature_verified": signature_verified,
-    }
-
-    inserted = await db.insert("webhook_event", row)
+        "signature_verified": True,
+    })
     is_duplicate = inserted is None and settings.supabase_configured
 
-    # Phase 1: background_tasks.add_task(process_event, event_id)
+    # Only the first delivery of a given event id enqueues work.
+    if not is_duplicate:
+        background_tasks.add_task(pipeline.process_webhook_event, event_id)
 
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": "received",
-            "event_id": event_id,
-            "event_type": event_type,
-            "duplicate": is_duplicate,
-        },
-    )
+    return JSONResponse(status_code=200, content={
+        "status": "received",
+        "event_id": event_id,
+        "event_type": event_type,
+        "duplicate": is_duplicate,
+    })

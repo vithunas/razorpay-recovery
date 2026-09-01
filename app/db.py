@@ -56,6 +56,23 @@ async def insert(table: str, row: dict[str, Any], *, upsert: bool = False) -> di
     raise SupabaseError(f"insert {table} failed: {resp.status_code} {resp.text}")
 
 
+async def update(table: str, patch: dict[str, Any], *, params: dict[str, str]) -> list[dict[str, Any]]:
+    """PATCH rows matching `params` (PostgREST filter syntax). Returns updated rows."""
+    if not settings.supabase_configured:
+        _local_append(f"{table}:update", {"patch": patch, "where": params})
+        return []
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.patch(
+            f"{settings.rest_url}/{table}",
+            headers={**_headers(), "Prefer": "return=representation"},
+            params=params,
+            json=patch,
+        )
+    if resp.status_code in (200, 204):
+        return resp.json() if resp.text else []
+    raise SupabaseError(f"update {table} failed: {resp.status_code} {resp.text}")
+
+
 async def select(table: str, *, params: dict[str, str] | None = None) -> list[dict[str, Any]]:
     if not settings.supabase_configured:
         return []
